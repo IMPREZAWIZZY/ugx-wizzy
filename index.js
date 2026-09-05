@@ -17,6 +17,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal');
 
 const PREFIX = '.'; // command prefix, e.g. ".ping"
 const BOT_NAME = 'UGX WIZZY';
@@ -30,7 +31,6 @@ async function startBot() {
     version,
     auth: state,
     logger: pino({ level: 'silent' }), // set to 'info' for verbose logs
-    printQRInTerminal: true,
   });
 
   // Persist login credentials whenever they update
@@ -38,7 +38,13 @@ async function startBot() {
 
   // Handle connection open/close/reconnect
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    // Print QR code manually (printQRInTerminal was deprecated)
+    if (qr) {
+      console.log('\n📱 Scan this QR code with WhatsApp (Linked Devices):\n');
+      qrcode.generate(qr, { small: true });
+    }
 
     if (connection === 'close') {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
