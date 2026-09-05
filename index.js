@@ -26,28 +26,37 @@ const BOT_NAME = 'UGX WIZZY';
 const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
 async function startBot() {
+  console.log('--- Starting UGX WIZZY ---');
+  console.log('PHONE_NUMBER is set:', !!PHONE_NUMBER, PHONE_NUMBER ? `(length: ${PHONE_NUMBER.length})` : '');
+
   // Loads/saves login session so you don't rescan the QR every restart
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
   const { version } = await fetchLatestBaileysVersion();
+  console.log('Baileys version:', version);
+  console.log('Already registered?', state.creds.registered);
 
   const sock = makeWASocket({
     version,
     auth: state,
-    logger: pino({ level: 'silent' }), // set to 'info' for verbose logs
+    logger: pino({ level: 'debug' }), // verbose logging to diagnose issues
     printQRInTerminal: false, // we're using a pairing code instead
   });
 
   // If not yet logged in, request a pairing code instead of a QR code
   if (PHONE_NUMBER && !sock.authState.creds.registered) {
     setTimeout(async () => {
+      console.log('Requesting pairing code now...');
       try {
         const code = await sock.requestPairingCode(PHONE_NUMBER);
         console.log(`\n🔑 Your pairing code is: ${code}\n`);
         console.log('Enter this in WhatsApp: Settings → Linked Devices → Link a Device → Link with phone number instead\n');
       } catch (err) {
-        console.error('Failed to get pairing code:', err);
+        console.error('Failed to get pairing code. Full error below:');
+        console.error(err);
       }
     }, 3000); // small delay so the socket is ready
+  } else if (!PHONE_NUMBER) {
+    console.log('⚠️ PHONE_NUMBER environment variable is not set — cannot request pairing code.');
   }
 
   // Persist login credentials whenever they update
@@ -56,9 +65,12 @@ async function startBot() {
   // Handle connection open/close/reconnect
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
+    console.log('Connection update:', connection || '(no connection field)');
 
     if (connection === 'close') {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      console.log('Disconnect status code:', statusCode);
+      console.log('Disconnect reason:', lastDisconnect?.error?.message || lastDisconnect?.error);
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`${BOT_NAME}: connection closed. Reconnecting: ${shouldReconnect}`);
       if (shouldReconnect) startBot();
