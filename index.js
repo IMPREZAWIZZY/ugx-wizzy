@@ -17,10 +17,13 @@ const {
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
 
 const PREFIX = '.'; // command prefix, e.g. ".ping"
 const BOT_NAME = 'UGX WIZZY';
+
+// Your WhatsApp number, digits only, WITH country code, NO + or spaces.
+// Set this in Railway under Variables as PHONE_NUMBER, e.g. 256712345678
+const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
 async function startBot() {
   // Loads/saves login session so you don't rescan the QR every restart
@@ -31,20 +34,28 @@ async function startBot() {
     version,
     auth: state,
     logger: pino({ level: 'silent' }), // set to 'info' for verbose logs
+    printQRInTerminal: false, // we're using a pairing code instead
   });
+
+  // If not yet logged in, request a pairing code instead of a QR code
+  if (PHONE_NUMBER && !sock.authState.creds.registered) {
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(PHONE_NUMBER);
+        console.log(`\n🔑 Your pairing code is: ${code}\n`);
+        console.log('Enter this in WhatsApp: Settings → Linked Devices → Link a Device → Link with phone number instead\n');
+      } catch (err) {
+        console.error('Failed to get pairing code:', err);
+      }
+    }, 3000); // small delay so the socket is ready
+  }
 
   // Persist login credentials whenever they update
   sock.ev.on('creds.update', saveCreds);
 
   // Handle connection open/close/reconnect
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    // Print QR code manually (printQRInTerminal was deprecated)
-    if (qr) {
-      console.log('\n📱 Scan this QR code with WhatsApp (Linked Devices):\n');
-      qrcode.generate(qr, { small: true });
-    }
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'close') {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
